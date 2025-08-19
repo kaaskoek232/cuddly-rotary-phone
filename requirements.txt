@@ -1,0 +1,39 @@
+# Core Python Libraries
+argparse
+asyncio
+collections
+concurrent.futures
+dataclasses
+hashlib
+json
+logging
+os
+pathlib
+re
+socket
+subprocess
+sys
+time
+typing
+
+# External Libraries
+beautifulsoup4
+fastapi
+fastmcp
+feedparser
+numpy
+pydantic
+pypdf
+requests
+uvicorn
+
+# AI and Machine Learning
+ollama
+torch
+
+# Optional but recommended
+pyyaml
+faulthandler
+
+# Development and Debugging
+python-multipart
