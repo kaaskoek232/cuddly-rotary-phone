@@ -6,73 +6,50 @@ Holistic integration of FastMCP server architecture with comprehensive tool suit
 
 import argparse
 import asyncio
-import base64
-from collections import defaultdict, deque
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 import datetime
 from datetime import timedelta
-import difflib
-from functools import lru_cache, wraps
 import functools
-import gc
-import glob
 import hashlib
 import json
+import logging
 import logging
 import mimetypes
 import os
 from pathlib import Path
 import pickle
-import random
 import re
-import shlex
-import shutil
 import sqlite3
-import statistics
 import subprocess
-import sys
-import tempfile
 import threading
 import time
 import traceback
 from typing import (
-    Annotated,
     Any,
     AsyncIterator,
-    Callable,
     Dict,
     List,
     Literal,
     Optional,
-    Set,
     Tuple,
-    Union,
 )
-from urllib.parse import urljoin, urlparse
-import uuid
-import weakref
-import xml.etree.ElementTree as ET
-
 import aiohttp
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 from pydantic import BaseModel, Field
 import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import yaml
-
-# FastAPI imports
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import uvicorn
+import yaml
 
 # FastMCP imports with proper error handling
 try:
     from fastmcp import FastMCP
-    from fastmcp.integrations.fastapi import FastMCPIntegration
     MCP_AVAILABLE = True
     
     # Application context for lifecycle management
@@ -127,13 +104,12 @@ try:
     mcp = FastMCP(
         name="AgenticCoreServer",
         version="2.0.0",
-        description="Advanced unified development agent server with comprehensive tool suite and safety features",
         lifespan=app_lifespan
     )
     
 except ImportError as e:
     # Fallback for systems without FastMCP
-    logger.error(f"FastMCP not available: {e}")
+    logger.warning(f"FastMCP not available: {e}")
     
     class FastMCP:
         def __init__(self, name: str, version: str = "1.0.0", description: str = "", lifespan=None):
@@ -1629,138 +1605,40 @@ def parse_args():
     
     return parser.parse_args()
 
-async def create_fastapi_app() -> FastAPI:
-    """Create and configure FastAPI application"""
-    
-    # Create FastAPI app
-    app = FastAPI(
-        title="AgenticCore Master Server",
-        description="Advanced unified development agent server with comprehensive tool suite",
-        version="2.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc"
-    )
-    
-    # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    
-    # FastMCP integration with FastAPI
-    if MCP_AVAILABLE:
-        mcp_integration = FastMCPIntegration(mcp)
-        mcp_integration.register_routes(app)
-    
-    @app.get("/health")
-    async def health_check():
-        """Health check endpoint"""
-        return {
-            "status": "healthy",
-            "version": "2.0.0",
-            "timestamp": datetime.datetime.now().isoformat(),
-            "mcp_available": MCP_AVAILABLE
-        }
-    
-    @app.get("/status")
-    async def status():
-        """Detailed status endpoint"""
-        return await system_status()
-    
-    return app
+# Create the fastAPI server
+fastapi_app = FastAPI()
 
-async def main_startup_and_run():
-    """Enhanced main startup with hybrid FastAPI + FastMCP support"""
-    args = parse_args()
-    
-    # Update config with command line arguments
-    config.server_port = args.port
-    config.server_host = args.host
-    
-    logger.info("Starting AgenticCore Master v2.0...")
-    
-    # Initialize system initialization memory
-    if MCP_AVAILABLE:
-        # Save system initialization to memory during startup
-        await asyncio.sleep(1)  # Let the lifecycle manager initialize
-        if app_context.memory:
-            app_context.memory.save(
-                "_system_init", 
-                f"AgenticCore Master v2.0 initialized at {datetime.datetime.now().isoformat()}",
-                category="system", 
-                importance=0.1,
-                memory_type="system",
-                source="startup_process",
-                metadata={
-                    "version": "2.0.0",
-                    "ollama_model": OLLAMA_MODEL_NAME,
-                    "available_models": list(app_context.llm.models.keys()) if app_context.llm else [],
-                    "config_hash": hashlib.md5(str(asdict(config)).encode()).hexdigest(),
-                    "workspace_path": str(config.workspace_path),
-                    "mcp_available": MCP_AVAILABLE,
-                    "server_config": {
-                        "host": config.server_host,
-                        "port": config.server_port,
-                        "transport": args.transport,
-                        "mode": args.mode
-                    }
-                }
-            )
-    
-    logger.info("AgenticCore Master initialization complete.")
+# Create the mcp server
+mcp = FastMCP()
 
-    try:
-        if args.mode == "fastapi":
-            # FastAPI only mode
-            logger.info(f"Starting FastAPI server on {config.server_host}:{config.server_port}...")
-            app = await create_fastapi_app()
-            uvicorn_config = uvicorn.Config(
-                app=app,
-                host=config.server_host,
-                port=config.server_port,
-                log_level="info",
-                access_log=True
-            )
-            server = uvicorn.Server(uvicorn_config)
-            await server.serve()
-            
-        elif args.mode == "mcp" and MCP_AVAILABLE:
-            # MCP only mode
-            logger.info(f"Starting FastMCP server on {config.server_host}:{config.server_port} with {args.transport} transport...")
-            mcp.run(transport=args.transport, port=config.server_port)
-            
-        elif args.mode == "hybrid" and MCP_AVAILABLE:
-            # Hybrid mode - FastAPI with MCP integration
-            logger.info(f"Starting hybrid FastAPI + FastMCP server on {config.server_host}:{config.server_port}...")
-            app = await create_fastapi_app()
-            uvicorn_config = uvicorn.Config(
-                app=app,
-                host=config.server_host,
-                port=config.server_port,
-                log_level="info",
-                access_log=True
-            )
-            server = uvicorn.Server(uvicorn_config)
-            await server.serve()
-            
-        else:
-            logger.error("FastMCP not available or invalid mode. Cannot start server properly.")
-            # Fallback behavior for systems without FastMCP
-            logger.info("Running in compatibility mode...")
-            while True:
-                await asyncio.sleep(60)
-                logger.info("Server running in compatibility mode (tools not exposed)")
-                
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received. Initiating graceful shutdown...")
-    except Exception as e:
-        logger.critical(f"Critical system error: {e}")
-        logger.critical(traceback.format_exc())
-    finally:
-        logger.info("Shutdown complete.")
+@fastapi_app.get("/", response_model=bool)
+def root():
+    return True
+
+@mcp.tool()
+def hello_tool(name: str):
+    return f"Hello {name}" 
+
+# Combine mcp and fastapi
+mcp_app = mcp.http_app(transport="streamable-http")
+routes = [
+    *mcp_app.routes,
+    *fastapi_app.routes
+]
+app = FastAPI(
+    routes=routes,
+    lifespan=mcp_app.lifespan,
+)
+
+# 2. Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
+
 
 if __name__ == "__main__":
-    asyncio.run(main_startup_and_run())
+    uvicorn.run(app, host="0.0.0.0", port=8000)
